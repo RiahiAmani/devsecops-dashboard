@@ -46,7 +46,6 @@ spec:
     IMAGE_TAG      = "${BUILD_NUMBER}"
   }
   stages {
-
     stage('Analyse des secrets (Gitleaks)') {
       steps {
         container('gitleaks') {
@@ -57,7 +56,6 @@ spec:
         archiveArtifacts artifacts: 'gitleaks-report.json', allowEmptyArchive: true
       }
     }
-
     stage('Analyse infrastructure (Checkov)') {
       steps {
         container('checkov') {
@@ -72,7 +70,20 @@ spec:
         archiveArtifacts artifacts: 'results_json.json', allowEmptyArchive: true
       }
     }
-
+    stage('Build et push Backend (Kaniko)') {
+      steps {
+        container('kaniko') {
+          sh '''
+          /kaniko/executor \
+            --context=dir://${WORKSPACE}/backend \
+            --dockerfile=${WORKSPACE}/backend/Dockerfile \
+            --destination=${BACKEND_IMAGE}:${IMAGE_TAG} \
+            --destination=${BACKEND_IMAGE}:latest \
+            --ignore-path=/product_uuid
+          '''
+        }
+      }
+    }
     stage('Build et push Frontend (Kaniko)') {
       steps {
         container('kaniko') {
@@ -83,26 +94,10 @@ spec:
             --destination=${FRONTEND_IMAGE}:${IMAGE_TAG} \
             --destination=${FRONTEND_IMAGE}:latest \
             --ignore-path=/product_uuid
-        '''
-    }
-  }
-}
-
-    stage('Build et push Frontend (Kaniko)') {
-      steps {
-        container('kaniko') {
-          sh '''
-          /kaniko/executor \
-            --context=dir://${WORKSPACE}/frontend \
-            --dockerfile=${WORKSPACE}/frontend/Dockerfile \
-            --destination=${FRONTEND_IMAGE}:${IMAGE_TAG} \
-            --destination=${FRONTEND_IMAGE}:latest
-            --ignore-path=/product_uuid
           '''
         }
       }
     }
-
     stage('Scan de vulnerabilites (Trivy)') {
       steps {
         container('trivy') {
@@ -114,7 +109,6 @@ spec:
         archiveArtifacts artifacts: 'trivy-*.json', allowEmptyArchive: true
       }
     }
-
     stage('Deploiement Kubernetes') {
       steps {
         container('kubectl') {
