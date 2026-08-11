@@ -73,19 +73,20 @@ spec:
       }
     }
 
-    stage('Build et push Backend (Kaniko)') {
+    stage('Build et push Frontend (Kaniko)') {
       steps {
         container('kaniko') {
           sh '''
           /kaniko/executor \
-            --context=dir://${WORKSPACE}/backend \
-            --dockerfile=${WORKSPACE}/backend/Dockerfile \
-            --destination=${BACKEND_IMAGE}:${IMAGE_TAG} \
-            --destination=${BACKEND_IMAGE}:latest
-          '''
-        }
-      }
+            --context=dir://${WORKSPACE}/frontend \
+            --dockerfile=${WORKSPACE}/frontend/Dockerfile \
+            --destination=${FRONTEND_IMAGE}:${IMAGE_TAG} \
+            --destination=${FRONTEND_IMAGE}:latest \
+            --ignore-path=/product_uuid
+        '''
     }
+  }
+}
 
     stage('Build et push Frontend (Kaniko)') {
       steps {
@@ -96,6 +97,7 @@ spec:
             --dockerfile=${WORKSPACE}/frontend/Dockerfile \
             --destination=${FRONTEND_IMAGE}:${IMAGE_TAG} \
             --destination=${FRONTEND_IMAGE}:latest
+            --ignore-path=/product_uuid
           '''
         }
       }
