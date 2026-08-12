@@ -36,6 +36,24 @@ spec:
               value: "http://kube-prometheus-stack-prometheus.monitoring.svc.cluster.local:9090"
             - name: FRONTEND_ORIGIN
               value: "https://dashboard.riahi.dpdns.org"
+            - name: LOKI_URL
+              value: "http://loki.monitoring.svc.cluster.local:3100"
+            - name: JENKINS_URL
+              value: "http://jenkins-service.jenkins.svc.cluster.local:8080"
+            - name: JENKINS_JOB
+              value: "taskmanager"
+            - name: JENKINS_USER
+              valueFrom:
+                secretKeyRef:
+                  name: jenkins-api-credentials
+                  key: username
+            - name: JENKINS_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: jenkins-api-credentials
+                  key: token
+            - name: CLOUDFLARED_METRICS_URL
+              value: "http://cloudflared-metrics.cloudflared.svc.cluster.local:20241"
           resources:
             requests:
               memory: "128Mi"
