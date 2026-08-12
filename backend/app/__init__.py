@@ -18,6 +18,10 @@ def create_app():
         'JENKINS_URL',
         'http://jenkins-service.jenkins.svc.cluster.local:8080'
     )
+    app.config['JENKINS_PUBLIC_URL'] = os.getenv(
+        'JENKINS_PUBLIC_URL',
+        'https://jenkins.riahi.dpdns.org'
+    )
     app.config['JENKINS_USER'] = os.getenv('JENKINS_USER', '')
     app.config['JENKINS_TOKEN'] = os.getenv('JENKINS_TOKEN', '')
     app.config['JENKINS_JOB'] = os.getenv('JENKINS_JOB', 'taskmanager')
@@ -25,6 +29,11 @@ def create_app():
         'CLOUDFLARED_METRICS_URL',
         'http://cloudflared-metrics.cloudflared.svc.cluster.local:20241'
     )
+    app.config['SONARCLOUD_TOKEN'] = os.getenv('SONARCLOUD_TOKEN', '')
+    app.config['SONARCLOUD_PROJECT_KEY'] = os.getenv(
+        'SONARCLOUD_PROJECT_KEY', 'RiahiAmani_devsecops-platform'
+    )
+    app.config['GRAFANA_FALCO_URL'] = os.getenv('GRAFANA_FALCO_URL', '')
 
     from app.routes import main as main_blueprint
     app.register_blueprint(main_blueprint)

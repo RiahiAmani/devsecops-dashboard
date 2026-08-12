@@ -1,10 +1,13 @@
+import json
 import os
 import re
+import time
 
 import requests
 from flask import Blueprint, jsonify, current_app
 
 main = Blueprint('main', __name__)
+
 
 def query_prometheus(promql):
     url = f"{current_app.config['PROMETHEUS_URL']}/api/v1/query"
@@ -18,8 +21,10 @@ def query_prometheus(promql):
     except Exception:
         return None
 
+
 def query_loki_count(logql, minutes=60):
-    """Compte le nombre d'evenements correspondant a une requete LogQL sur les N dernieres minutes."""
+    """Compte le nombre total d'evenements correspondant a une requete LogQL,
+    en sommant sur tous les streams (labels) retournes par Loki."""
     url = f"{current_app.config['LOKI_URL']}/loki/api/v1/query"
     try:
         resp = requests.get(url, params={'query': logql}, timeout=5)
@@ -27,7 +32,35 @@ def query_loki_count(logql, minutes=60):
         result = resp.json().get('data', {}).get('result', [])
         if not result:
             return 0
-        return int(float(result[0]['value'][1]))
+        total = 0
+        for series in result:
+            total += int(float(series['value'][1]))
+        return total
+    except Exception:
+        return None
+
+
+def query_loki_logs(logql, limit=5, window_seconds=3600):
+    """Recupere les N dernieres lignes de logs correspondant a une requete LogQL."""
+    url = f"{current_app.config['LOKI_URL']}/loki/api/v1/query_range"
+    now_ns = int(time.time() * 1e9)
+    start_ns = now_ns - int(window_seconds * 1e9)
+    try:
+        resp = requests.get(url, params={
+            'query': logql,
+            'limit': limit,
+            'start': start_ns,
+            'end': now_ns,
+            'direction': 'backward',
+        }, timeout=5)
+        resp.raise_for_status()
+        result = resp.json().get('data', {}).get('result', [])
+        lines = []
+        for stream in result:
+            for value in stream.get('values', []):
+                lines.append({'timestamp_ns': int(value[0]), 'line': value[1]})
+        lines.sort(key=lambda x: x['timestamp_ns'], reverse=True)
+        return lines[:limit]
     except Exception:
         return None
 
@@ -56,6 +89,29 @@ def jenkins_get_artifact_text(job, build, relative_path):
         return None
 
 
+def jenkins_public_build_url(job, build_number):
+    """Construit l'URL publique (Cloudflare) d'un build, independamment
+    de la configuration interne 'Jenkins URL' cote serveur Jenkins."""
+    base = current_app.config['JENKINS_PUBLIC_URL'].rstrip('/')
+    return f"{base}/job/{job}/{build_number}/"
+
+
+def jenkins_public_artifact_url(job, build_number, relative_path):
+    base = current_app.config['JENKINS_PUBLIC_URL'].rstrip('/')
+    return f"{base}/job/{job}/{build_number}/artifact/{relative_path}"
+
+
+def sonarcloud_get(path, params=None):
+    url = f"https://sonarcloud.io{path}"
+    token = current_app.config['SONARCLOUD_TOKEN']
+    try:
+        resp = requests.get(url, params=params, auth=(token, ''), timeout=8)
+        resp.raise_for_status()
+        return resp.json()
+    except Exception:
+        return None
+
+
 def parse_prom_metric(text, metric_name):
     """Extrait la valeur d'une metrique au format exposition Prometheus brut (texte)."""
     pattern = rf'^{re.escape(metric_name)}(\{{[^}}]*\}})?\s+([0-9.eE+-]+)'
@@ -67,7 +123,7 @@ def parse_prom_metric(text, metric_name):
 
 
 # ----------------------------------------------------------------------
-# Sante / vue d'ensemble (existant)
+# Sante / vue d'ensemble
 # ----------------------------------------------------------------------
 
 @main.route('/api/health')
@@ -132,6 +188,35 @@ def database():
 
 
 # ----------------------------------------------------------------------
+# Sante des pods (kube-state-metrics + cAdvisor)
+# ----------------------------------------------------------------------
+
+@main.route('/api/pods')
+def pods_status():
+    metrics = {
+        'node_ready': query_prometheus('kube_node_status_condition{condition="Ready", status="true"}'),
+        'backend_restarts': query_prometheus(
+            'sum(kube_pod_container_status_restarts_total{namespace="devsecops", pod=~"devsecops-dashboard-backend.*"})'
+        ),
+        'app_restarts': query_prometheus(
+            'sum(kube_pod_container_status_restarts_total{namespace="devsecops", pod=~"taskmanager-app.*"})'
+        ),
+        'db_restarts': query_prometheus(
+            'sum(kube_pod_container_status_restarts_total{namespace="devsecops", pod=~"taskmanager-postgres.*"})'
+        ),
+        'app_memory_percent': query_prometheus(
+            '100 * sum(container_memory_working_set_bytes{namespace="devsecops", pod=~"taskmanager-app.*"}) '
+            '/ sum(kube_pod_container_resource_limits{namespace="devsecops", pod=~"taskmanager-app.*", resource="memory"})'
+        ),
+        'db_memory_percent': query_prometheus(
+            '100 * sum(container_memory_working_set_bytes{namespace="devsecops", pod=~"taskmanager-postgres.*"}) '
+            '/ sum(kube_pod_container_resource_limits{namespace="devsecops", pod=~"taskmanager-postgres.*", resource="memory"})'
+        ),
+    }
+    return jsonify(metrics)
+
+
+# ----------------------------------------------------------------------
 # Pipeline CI/CD (Jenkins)
 # ----------------------------------------------------------------------
 
@@ -140,7 +225,7 @@ def pipeline():
     job = current_app.config['JENKINS_JOB']
     data = jenkins_get(
         f'/job/{job}/lastBuild/api/json',
-        tree='number,result,building,duration,timestamp,url'
+        tree='number,result,building,duration,timestamp'
     )
     if data is None:
         return jsonify({'available': False})
@@ -157,14 +242,66 @@ def pipeline():
 
     return jsonify({
         'available': True,
+        'job_name': job,
         'build_number': data.get('number'),
         'result': data.get('result'),
         'building': data.get('building'),
         'duration_ms': data.get('duration'),
         'timestamp_ms': data.get('timestamp'),
-        'url': data.get('url'),
+        'url': jenkins_public_build_url(job, data.get('number')),
         'stages': stages,
     })
+
+
+@main.route('/api/pipeline/history')
+def pipeline_history():
+    job = current_app.config['JENKINS_JOB']
+    data = jenkins_get(
+        f'/job/{job}/api/json',
+        tree='builds[number,result,timestamp,duration]{0,5}'
+    )
+    if data is None:
+        return jsonify({'available': False})
+
+    builds = []
+    for b in data.get('builds', []):
+        builds.append({
+            'build_number': b.get('number'),
+            'result': b.get('result'),
+            'timestamp_ms': b.get('timestamp'),
+            'duration_ms': b.get('duration'),
+            'url': jenkins_public_build_url(job, b.get('number')),
+        })
+    return jsonify({'available': True, 'builds': builds})
+
+
+# ----------------------------------------------------------------------
+# Qualite du code (SonarCloud)
+# ----------------------------------------------------------------------
+
+@main.route('/api/quality')
+def quality():
+    project_key = current_app.config['SONARCLOUD_PROJECT_KEY']
+
+    qg = sonarcloud_get('/api/qualitygates/project_status', params={'projectKey': project_key})
+    if qg is None:
+        return jsonify({'available': False})
+
+    measures = sonarcloud_get('/api/measures/component', params={
+        'component': project_key,
+        'metricKeys': 'coverage,bugs,vulnerabilities,code_smells,security_hotspots',
+    })
+
+    result = {
+        'available': True,
+        'quality_gate_status': qg.get('projectStatus', {}).get('status'),
+        'project_url': f"https://sonarcloud.io/project/overview?id={project_key}",
+    }
+    if measures:
+        for m in measures.get('component', {}).get('measures', []):
+            result[m['metric']] = m.get('value')
+
+    return jsonify(result)
 
 
 # ----------------------------------------------------------------------
@@ -182,7 +319,18 @@ def security_falco():
     return jsonify({
         'critical_events_1h': count_1h,
         'critical_events_24h': count_24h,
+        'grafana_url': current_app.config['GRAFANA_FALCO_URL'],
     })
+
+
+@main.route('/api/security/falco/recent')
+def security_falco_recent():
+    lines = query_loki_logs(
+        '{namespace="falco"} |~ "Critical|Error|Alert|Emergency"', limit=5
+    )
+    if lines is None:
+        return jsonify({'available': False})
+    return jsonify({'available': True, 'events': lines})
 
 
 # ----------------------------------------------------------------------
@@ -209,14 +357,16 @@ def security_scans():
         'trivy': None,
         'gitleaks': None,
         'checkov': None,
+        'artifact_urls': {},
     }
 
-    # Trivy : compte des vulnerabilites HIGH/CRITICAL
     if 'trivy-report.json' in artifacts:
+        result['artifact_urls']['trivy'] = jenkins_public_artifact_url(
+            job, build_number, artifacts['trivy-report.json']
+        )
         text = jenkins_get_artifact_text(job, build_number, artifacts['trivy-report.json'])
         if text:
             try:
-                import json
                 data = json.loads(text)
                 high = critical = 0
                 for res in data.get('Results', []) or []:
@@ -230,23 +380,25 @@ def security_scans():
             except Exception:
                 pass
 
-    # Gitleaks : nombre de secrets detectes
     if 'gitleaks-report.json' in artifacts:
+        result['artifact_urls']['gitleaks'] = jenkins_public_artifact_url(
+            job, build_number, artifacts['gitleaks-report.json']
+        )
         text = jenkins_get_artifact_text(job, build_number, artifacts['gitleaks-report.json'])
         if text:
             try:
-                import json
                 data = json.loads(text)
                 result['gitleaks'] = {'secrets_found': len(data) if isinstance(data, list) else 0}
             except Exception:
                 pass
 
-    # Checkov : resume pass/fail
     if 'results_json.json' in artifacts:
+        result['artifact_urls']['checkov'] = jenkins_public_artifact_url(
+            job, build_number, artifacts['results_json.json']
+        )
         text = jenkins_get_artifact_text(job, build_number, artifacts['results_json.json'])
         if text:
             try:
-                import json
                 data = json.loads(text)
                 summary = data.get('summary', {}) if isinstance(data, dict) else {}
                 result['checkov'] = {
@@ -260,7 +412,7 @@ def security_scans():
 
 
 # ----------------------------------------------------------------------
-# Tunnel Cloudflare (metriques cloudflared, lues directement)
+# Tunnel Cloudflare
 # ----------------------------------------------------------------------
 
 @main.route('/api/tunnel')

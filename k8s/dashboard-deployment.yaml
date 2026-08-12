@@ -40,6 +40,17 @@ spec:
               value: "http://loki.monitoring.svc.cluster.local:3100"
             - name: JENKINS_URL
               value: "http://jenkins-service.jenkins.svc.cluster.local:8080"
+            - name: JENKINS_PUBLIC_URL
+              value: "https://jenkins.riahi.dpdns.org"
+            - name: SONARCLOUD_PROJECT_KEY
+              value: "RiahiAmani_devsecops-platform"
+            - name: SONARCLOUD_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: sonarcloud-dashboard-credentials
+                  key: token
+            - name: GRAFANA_FALCO_URL
+              value: "https://grafana.riahi.dpdns.org/d/ad5hblk/logs-centralises-e28094-devsecops?orgId=1&timezone=browser&var-namespace=falco&from=now-1h&to=now"
             - name: JENKINS_JOB
               value: "taskmanager"
             - name: JENKINS_USER
@@ -54,6 +65,7 @@ spec:
                   key: token
             - name: CLOUDFLARED_METRICS_URL
               value: "http://cloudflared-metrics.cloudflared.svc.cluster.local:20241"
+            
           resources:
             requests:
               memory: "128Mi"
