@@ -3,7 +3,25 @@ import { useEffect, useState } from 'react'
 const API_BASE = import.meta.env.VITE_API_BASE || '/api'
 const REFRESH_MS = 15000
 
-function StatCard({ label, value, unit = '', warn = false, invert = false }) {
+function formatDuration(ms) {
+  if (ms === null || ms === undefined) return '—'
+  const totalSec = Math.floor(ms / 1000)
+  const min = Math.floor(totalSec / 60)
+  const sec = totalSec % 60
+  return `${min}m ${sec}s`
+}
+
+function timeAgo(ms) {
+  if (!ms) return '—'
+  const diffMin = Math.floor((Date.now() - ms) / 60000)
+  if (diffMin < 1) return "à l'instant"
+  if (diffMin < 60) return `il y a ${diffMin} min`
+  const h = Math.floor(diffMin / 60)
+  if (h < 24) return `il y a ${h}h`
+  return `il y a ${Math.floor(h / 24)}j`
+}
+
+function StatCard({ label, value, unit = '', warn = false, invert = false, decimals = 1 }) {
   const isBad = value === null || value === undefined
     ? false
     : invert ? value < warn : value > warn
@@ -15,20 +33,100 @@ function StatCard({ label, value, unit = '', warn = false, invert = false }) {
     }}>
       <div style={{ fontSize: 12, color: '#666' }}>{label}</div>
       <div style={{ fontSize: 24, fontWeight: 'bold' }}>
-        {value === null || value === undefined ? '—' : `${Number(value).toFixed(1)}${unit}`}
+        {value === null || value === undefined ? '—' : `${Number(value).toFixed(decimals)}${unit}`}
       </div>
     </div>
   )
 }
 
-function Section({ title, children }) {
+function BoolCard({ label, ok }) {
+  return (
+    <div style={{
+      padding: '1rem', borderRadius: 8,
+      background: ok ? '#f0fdf4' : '#fee2e2',
+      border: `1px solid ${ok ? '#16a34a' : '#dc2626'}`
+    }}>
+      <div style={{ fontSize: 12, color: '#666' }}>{label}</div>
+      <div style={{ fontSize: 24, fontWeight: 'bold', color: ok ? '#16a34a' : '#dc2626' }}>
+        {ok === null || ok === undefined ? '—' : ok ? 'OK' : 'KO'}
+      </div>
+    </div>
+  )
+}
+
+function StatusBadge({ status }) {
+  const map = {
+    SUCCESS: { bg: '#dcfce7', color: '#16a34a', label: 'SUCCÈS' },
+    FAILURE: { bg: '#fee2e2', color: '#dc2626', label: 'ÉCHEC' },
+    UNSTABLE: { bg: '#fef9c3', color: '#ca8a04', label: 'INSTABLE' },
+    ABORTED: { bg: '#f3f4f6', color: '#6b7280', label: 'ANNULÉ' },
+    BUILDING: { bg: '#dbeafe', color: '#2563eb', label: 'EN COURS' },
+  }
+  const s = map[status] || { bg: '#f3f4f6', color: '#6b7280', label: status || 'INCONNU' }
+  return (
+    <span style={{
+      display: 'inline-block', padding: '2px 10px', borderRadius: 999,
+      background: s.bg, color: s.color, fontSize: 12, fontWeight: 600
+    }}>
+      {s.label}
+    </span>
+  )
+}
+
+function Section({ title, subtitle, children }) {
   return (
     <section style={{ marginBottom: '2rem' }}>
-      <h2 style={{ fontSize: 18, borderBottom: '1px solid #e5e5e5', paddingBottom: 4 }}>{title}</h2>
+      <h2 style={{ fontSize: 18, borderBottom: '1px solid #e5e5e5', paddingBottom: 4, marginBottom: 2 }}>{title}</h2>
+      {subtitle && <p style={{ fontSize: 12, color: '#999', margin: '4px 0 0' }}>{subtitle}</p>}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1rem', marginTop: '1rem' }}>
         {children}
       </div>
     </section>
+  )
+}
+
+function PipelineCard({ data }) {
+  if (!data || !data.available) {
+    return (
+      <div style={{ padding: '1rem', borderRadius: 8, border: '1px solid #e5e5e5', gridColumn: '1 / -1', color: '#888' }}>
+        Jenkins injoignable ou aucun build trouvé
+      </div>
+    )
+  }
+  const status = data.building ? 'BUILDING' : data.result
+
+  return (
+    <div style={{ padding: '1.25rem', borderRadius: 8, background: '#fff', border: '1px solid #e5e5e5', gridColumn: '1 / -1' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
+        <div>
+          <div style={{ fontSize: 12, color: '#666' }}>Dernier build</div>
+          <a href={data.url} target="_blank" rel="noreferrer"
+             style={{ fontSize: 20, fontWeight: 'bold', color: '#111', textDecoration: 'none' }}>
+            {data.job_name || 'taskmanager'} #{data.build_number}
+          </a>
+        </div>
+        <StatusBadge status={status} />
+        <div style={{ fontSize: 13, color: '#666' }}>
+          Durée : {data.building ? 'en cours…' : formatDuration(data.duration_ms)}
+        </div>
+        <div style={{ fontSize: 13, color: '#666' }}>{timeAgo(data.timestamp_ms)}</div>
+      </div>
+
+      {data.stages?.length > 0 && (
+        <div style={{ display: 'flex', gap: 8, marginTop: '1rem', flexWrap: 'wrap' }}>
+          {data.stages.map((s, i) => (
+            <div key={i} style={{
+              flex: '1 1 120px', padding: '0.5rem', borderRadius: 6, textAlign: 'center',
+              background: s.status === 'SUCCESS' ? '#f0fdf4' : s.status === 'FAILED' ? '#fee2e2' : '#f9fafb',
+              border: `1px solid ${s.status === 'SUCCESS' ? '#bbf7d0' : s.status === 'FAILED' ? '#fecaca' : '#e5e5e5'}`
+            }}>
+              <div style={{ fontSize: 11, fontWeight: 600 }}>{s.name}</div>
+              <div style={{ fontSize: 11, color: '#666' }}>{formatDuration(s.duration_ms)}</div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -43,7 +141,7 @@ function useEndpoint(path) {
           if (!r.ok) throw new Error(`HTTP ${r.status}`)
           return r.json()
         })
-        .then(setData)
+        .then(d => { setData(d); setError(null) })
         .catch(() => setError('Impossible de joindre le backend'))
     }
     fetchData()
@@ -58,6 +156,10 @@ export default function App() {
   const overview = useEndpoint('/overview')
   const application = useEndpoint('/application')
   const database = useEndpoint('/database')
+  const pipeline = useEndpoint('/pipeline')
+  const falco = useEndpoint('/security/falco')
+  const scans = useEndpoint('/security/scans')
+  const tunnel = useEndpoint('/tunnel')
 
   return (
     <div style={{ fontFamily: 'sans-serif', padding: '2rem', maxWidth: 1100, margin: '0 auto' }}>
@@ -110,6 +212,48 @@ export default function App() {
               unit=" Mo"
               warn={999999}
             />
+          </>
+        )}
+      </Section>
+
+      <Section title="Pipeline CI/CD — Jenkins">
+        {pipeline.error && <p style={{ color: 'red' }}>{pipeline.error}</p>}
+        <PipelineCard data={pipeline.data} />
+      </Section>
+
+      <Section title="Sécurité runtime — Falco" subtitle="Événements critiques détectés par le moteur eBPF, remontés via Loki">
+        {falco.error && <p style={{ color: 'red' }}>{falco.error}</p>}
+        {falco.data && (
+          <>
+            <StatCard label="Événements critiques (1h)" value={falco.data.critical_events_1h} warn={5} decimals={0} />
+            <StatCard label="Événements critiques (24h)" value={falco.data.critical_events_24h} warn={20} decimals={0} />
+          </>
+        )}
+      </Section>
+
+      <Section
+        title="Résultats des scans de sécurité"
+        subtitle={scans.data?.available ? `Basé sur le build #${scans.data.build_number} (${timeAgo(scans.data.timestamp_ms)})` : undefined}
+      >
+        {scans.error && <p style={{ color: 'red' }}>{scans.error}</p>}
+        {scans.data && !scans.data.available && <p style={{ color: '#888' }}>Aucun rapport disponible</p>}
+        {scans.data?.available && (
+          <>
+            <StatCard label="Trivy — CVE critiques" value={scans.data.trivy?.critical} warn={0} decimals={0} />
+            <StatCard label="Trivy — CVE élevées" value={scans.data.trivy?.high} warn={0} decimals={0} />
+            <StatCard label="Gitleaks — Secrets détectés" value={scans.data.gitleaks?.secrets_found} warn={0} decimals={0} />
+            <StatCard label="Checkov — Contrôles échoués" value={scans.data.checkov?.failed} warn={0} decimals={0} />
+          </>
+        )}
+      </Section>
+
+      <Section title="Tunnel Cloudflare">
+        {tunnel.error && <p style={{ color: 'red' }}>{tunnel.error}</p>}
+        {tunnel.data && (
+          <>
+            <BoolCard label="Tunnel joignable" ok={tunnel.data.reachable} />
+            <StatCard label="Connexions actives" value={tunnel.data.active_connections} warn={0} invert decimals={0} />
+            <StatCard label="Erreurs de config" value={tunnel.data.config_push_errors} warn={0} decimals={0} />
           </>
         )}
       </Section>
