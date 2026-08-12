@@ -6,20 +6,15 @@ from flask import Blueprint, jsonify, current_app
 
 main = Blueprint('main', __name__)
 
-def query_loki_count(logql, minutes=60):
-    """Compte le nombre total d'evenements correspondant a une requete LogQL,
-    en sommant sur tous les streams (labels) retournes par Loki."""
-    url = f"{current_app.config['LOKI_URL']}/loki/api/v1/query"
+def query_prometheus(promql):
+    url = f"{current_app.config['PROMETHEUS_URL']}/api/v1/query"
     try:
-        resp = requests.get(url, params={'query': logql}, timeout=5)
+        resp = requests.get(url, params={'query': promql}, timeout=5)
         resp.raise_for_status()
         result = resp.json().get('data', {}).get('result', [])
         if not result:
-            return 0
-        total = 0
-        for series in result:
-            total += int(float(series['value'][1]))
-        return total
+            return None
+        return float(result[0]['value'][1])
     except Exception:
         return None
 
