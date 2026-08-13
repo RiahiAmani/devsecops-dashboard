@@ -162,6 +162,7 @@ function BuildHistoryTimeline({ data }) {
   return (
     <div style={{ gridColumn: '1 / -1', display: 'flex', gap: 10, overflowX: 'auto', paddingBottom: 4 }}>
       {data.builds.map((b) => (
+          <a
         
           key={b.build_number}
           href={b.url}
