@@ -325,12 +325,32 @@ def security_falco():
 
 @main.route('/api/security/falco/recent')
 def security_falco_recent():
-    lines = query_loki_logs(
+    raw = query_loki_logs(
         '{namespace="falco"} |~ "Critical|Error|Alert|Emergency"', limit=5
     )
-    if lines is None:
+    if raw is None:
         return jsonify({'available': False})
-    return jsonify({'available': True, 'events': lines})
+
+    events = []
+    for entry in raw:
+        try:
+            parsed = json.loads(entry['line'])
+            events.append({
+                'timestamp_ns': entry['timestamp_ns'],
+                'time': parsed.get('time'),
+                'priority': parsed.get('priority'),
+                'rule': parsed.get('rule'),
+                'output': parsed.get('output'),
+            })
+        except Exception:
+            events.append({
+                'timestamp_ns': entry['timestamp_ns'],
+                'time': None,
+                'priority': None,
+                'rule': None,
+                'output': entry['line'][:300],
+            })
+    return jsonify({'available': True, 'events': events})
 
 
 # ----------------------------------------------------------------------
