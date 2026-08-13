@@ -11,14 +11,35 @@ spec:
     image: zricethezav/gitleaks:latest
     command: [sleep]
     args: [infinity]
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: 300m
+        memory: 256Mi
   - name: checkov
     image: bridgecrew/checkov:latest
     command: [sleep]
     args: [infinity]
+    resources:
+      requests:
+        cpu: 200m
+        memory: 256Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
   - name: kaniko
     image: gcr.io/kaniko-project/executor:debug
     command: [sleep]
     args: [infinity]
+    resources:
+      requests:
+        cpu: 300m
+        memory: 512Mi
+      limits:
+        cpu: 1000m
+        memory: 1Gi
     volumeMounts:
     - name: docker-config
       mountPath: /kaniko/.docker
@@ -26,10 +47,32 @@ spec:
     image: aquasec/trivy:latest
     command: [sleep]
     args: [infinity]
+    resources:
+      requests:
+        cpu: 200m
+        memory: 256Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
   - name: kubectl
     image: alpine/k8s:1.32.12
     command: [sleep]
     args: [infinity]
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        cpu: 200m
+        memory: 128Mi
+  - name: jnlp
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: 300m
+        memory: 512Mi
   volumes:
   - name: docker-config
     secret:
@@ -39,6 +82,9 @@ spec:
         path: config.json
 """
     }
+  }
+  options {
+    disableConcurrentBuilds()
   }
   environment {
     BACKEND_IMAGE  = "riahiamani/devsecops-dashboard-backend"
