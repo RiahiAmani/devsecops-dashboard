@@ -73,6 +73,27 @@ function StatusBadge({ status }) {
   )
 }
 
+function PriorityBadge({ priority }) {
+  const map = {
+    Emergency: { bg: '#fee2e2', color: '#991b1b' },
+    Alert: { bg: '#fee2e2', color: '#b91c1c' },
+    Critical: { bg: '#fee2e2', color: '#dc2626' },
+    Error: { bg: '#ffedd5', color: '#c2410c' },
+    Warning: { bg: '#fef9c3', color: '#ca8a04' },
+    Notice: { bg: '#dbeafe', color: '#2563eb' },
+  }
+  const s = map[priority] || { bg: '#f3f4f6', color: '#6b7280' }
+  return (
+    <span style={{
+      display: 'inline-block', padding: '2px 8px', borderRadius: 999,
+      background: s.bg, color: s.color, fontSize: 11, fontWeight: 700,
+      textTransform: 'uppercase', flexShrink: 0
+    }}>
+      {priority || '?'}
+    </span>
+  )
+}
+
 function Section({ title, subtitle, children }) {
   return (
     <section style={{ marginBottom: '2rem' }}>
@@ -130,6 +151,131 @@ function PipelineCard({ data }) {
   )
 }
 
+function BuildHistoryTimeline({ data }) {
+  if (!data || !data.available || !data.builds?.length) {
+    return (
+      <div style={{ padding: '1rem', borderRadius: 8, border: '1px solid #e5e5e5', gridColumn: '1 / -1', color: '#888' }}>
+        Aucun historique de build disponible
+      </div>
+    )
+  }
+  return (
+    <div style={{ gridColumn: '1 / -1', display: 'flex', gap: 10, overflowX: 'auto', paddingBottom: 4 }}>
+      {data.builds.map((b) => (
+        
+          key={b.build_number}
+          href={b.url}
+          target="_blank"
+          rel="noreferrer"
+          style={{
+            flex: '0 0 150px', padding: '0.75rem', borderRadius: 8, textDecoration: 'none', color: '#111',
+            background: '#fff', border: '1px solid #e5e5e5'
+          }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontWeight: 700, fontSize: 14 }}>#{b.build_number}</span>
+            <StatusBadge status={b.result} />
+          </div>
+          <div style={{ fontSize: 11, color: '#666', marginTop: 6 }}>{formatDuration(b.duration_ms)}</div>
+          <div style={{ fontSize: 11, color: '#999' }}>{timeAgo(b.timestamp_ms)}</div>
+        </a>
+      ))}
+    </div>
+  )
+}
+
+function QualityGateCard({ data }) {
+  if (!data || !data.available) {
+    return (
+      <div style={{ padding: '1rem', borderRadius: 8, border: '1px solid #e5e5e5', gridColumn: '1 / -1', color: '#888' }}>
+        SonarCloud injoignable ou aucune analyse disponible
+      </div>
+    )
+  }
+  const gateOk = data.quality_gate_status === 'OK'
+  return (
+    <>
+      <BoolCard label="Quality Gate" ok={gateOk} />
+      <StatCard label="Bugs" value={Number(data.bugs)} warn={0} decimals={0} />
+      <StatCard label="Vulnérabilités" value={Number(data.vulnerabilities)} warn={0} decimals={0} />
+      <StatCard label="Code smells" value={Number(data.code_smells)} warn={10} decimals={0} />
+      <StatCard label="Security hotspots" value={Number(data.security_hotspots)} warn={0} decimals={0} />
+      <StatCard label="Couverture" value={Number(data.coverage)} unit="%" warn={80} invert decimals={1} />
+      {data.project_url && (
+        <div style={{ gridColumn: '1 / -1', textAlign: 'right' }}>
+          <a href={data.project_url} target="_blank" rel="noreferrer" style={{ fontSize: 12, color: '#2563eb' }}>
+            Voir l'analyse complète sur SonarCloud →
+          </a>
+        </div>
+      )}
+    </>
+  )
+}
+
+function FalcoRecentEvents({ data }) {
+  if (!data || !data.available) {
+    return (
+      <div style={{ padding: '1rem', borderRadius: 8, border: '1px solid #e5e5e5', color: '#888' }}>
+        Aucun événement récent disponible
+      </div>
+    )
+  }
+  if (!data.events?.length) {
+    return (
+      <div style={{ padding: '1rem', borderRadius: 8, border: '1px solid #bbf7d0', background: '#f0fdf4', color: '#16a34a' }}>
+        Aucun événement critique récent
+      </div>
+    )
+  }
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      {data.events.map((e, i) => (
+        <div key={i} style={{
+          padding: '0.6rem 0.75rem', borderRadius: 8, background: '#fff',
+          border: '1px solid #e5e5e5', display: 'flex', gap: 10, alignItems: 'flex-start'
+        }}>
+          <PriorityBadge priority={e.priority} />
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div style={{ fontSize: 13, fontWeight: 600 }}>{e.rule || 'Règle inconnue'}</div>
+            <div
+              title={e.output}
+              style={{
+                fontSize: 11, color: '#666', marginTop: 2, whiteSpace: 'nowrap',
+                overflow: 'hidden', textOverflow: 'ellipsis'
+              }}
+            >
+              {e.output}
+            </div>
+          </div>
+          <div style={{ fontSize: 11, color: '#999', flexShrink: 0 }}>
+            {e.time ? new Date(e.time).toLocaleTimeString('fr-FR') : '—'}
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function PodsHealthCard({ data }) {
+  if (!data) {
+    return (
+      <div style={{ padding: '1rem', borderRadius: 8, border: '1px solid #e5e5e5', gridColumn: '1 / -1', color: '#888' }}>
+        Métriques pods indisponibles
+      </div>
+    )
+  }
+  return (
+    <>
+      <BoolCard label="Nœud prêt" ok={data.node_ready === 1 || data.node_ready === true} />
+      <StatCard label="App — mémoire" value={data.app_memory_percent} unit="%" warn={85} />
+      <StatCard label="DB — mémoire" value={data.db_memory_percent} unit="%" warn={85} />
+      <StatCard label="Redémarrages App" value={data.app_restarts} warn={5} decimals={0} />
+      <StatCard label="Redémarrages DB" value={data.db_restarts} warn={5} decimals={0} />
+      <StatCard label="Redémarrages Backend" value={data.backend_restarts} warn={5} decimals={0} />
+    </>
+  )
+}
+
 function useEndpoint(path) {
   const [data, setData] = useState(null)
   const [error, setError] = useState(null)
@@ -157,9 +303,13 @@ export default function App() {
   const application = useEndpoint('/application')
   const database = useEndpoint('/database')
   const pipeline = useEndpoint('/pipeline')
+  const pipelineHistory = useEndpoint('/pipeline/history')
+  const quality = useEndpoint('/quality')
   const falco = useEndpoint('/security/falco')
+  const falcoRecent = useEndpoint('/security/falco/recent')
   const scans = useEndpoint('/security/scans')
   const tunnel = useEndpoint('/tunnel')
+  const pods = useEndpoint('/pods')
 
   return (
     <div style={{ fontFamily: 'sans-serif', padding: '2rem', maxWidth: 1100, margin: '0 auto' }}>
@@ -186,6 +336,11 @@ export default function App() {
             <StatCard label="Disque disponible (/var)" value={overview.data.disk_available_percent} unit="%" warn={15} invert />
           </>
         )}
+      </Section>
+
+      <Section title="Santé des pods / du nœud" subtitle="Consommation mémoire et stabilité des composants critiques">
+        {pods.error && <p style={{ color: 'red' }}>{pods.error}</p>}
+        <PodsHealthCard data={pods.data} />
       </Section>
 
       <Section title="Application Task Manager">
@@ -221,6 +376,16 @@ export default function App() {
         <PipelineCard data={pipeline.data} />
       </Section>
 
+      <Section title="Historique des builds" subtitle="5 derniers builds du pipeline">
+        {pipelineHistory.error && <p style={{ color: 'red' }}>{pipelineHistory.error}</p>}
+        <BuildHistoryTimeline data={pipelineHistory.data} />
+      </Section>
+
+      <Section title="Qualité du code — SonarCloud">
+        {quality.error && <p style={{ color: 'red' }}>{quality.error}</p>}
+        <QualityGateCard data={quality.data} />
+      </Section>
+
       <Section title="Sécurité runtime — Falco" subtitle="Événements critiques détectés par le moteur eBPF, remontés via Loki">
         {falco.error && <p style={{ color: 'red' }}>{falco.error}</p>}
         {falco.data && (
@@ -229,6 +394,13 @@ export default function App() {
             <StatCard label="Événements critiques (24h)" value={falco.data.critical_events_24h} warn={20} decimals={0} />
           </>
         )}
+      </Section>
+
+      <Section title="Falco — derniers événements">
+        {falcoRecent.error && <p style={{ color: 'red' }}>{falcoRecent.error}</p>}
+        <div style={{ gridColumn: '1 / -1' }}>
+          <FalcoRecentEvents data={falcoRecent.data} />
+        </div>
       </Section>
 
       <Section
@@ -243,6 +415,19 @@ export default function App() {
             <StatCard label="Trivy — CVE élevées" value={scans.data.trivy?.high} warn={0} decimals={0} />
             <StatCard label="Gitleaks — Secrets détectés" value={scans.data.gitleaks?.secrets_found} warn={0} decimals={0} />
             <StatCard label="Checkov — Contrôles échoués" value={scans.data.checkov?.failed} warn={0} decimals={0} />
+            {(scans.data.trivy?.report_url || scans.data.gitleaks?.report_url || scans.data.checkov?.report_url) && (
+              <div style={{ gridColumn: '1 / -1', display: 'flex', gap: 16, justifyContent: 'flex-end', fontSize: 12 }}>
+                {scans.data.trivy?.report_url && (
+                  <a href={scans.data.trivy.report_url} target="_blank" rel="noreferrer" style={{ color: '#2563eb' }}>Rapport Trivy →</a>
+                )}
+                {scans.data.gitleaks?.report_url && (
+                  <a href={scans.data.gitleaks.report_url} target="_blank" rel="noreferrer" style={{ color: '#2563eb' }}>Rapport Gitleaks →</a>
+                )}
+                {scans.data.checkov?.report_url && (
+                  <a href={scans.data.checkov.report_url} target="_blank" rel="noreferrer" style={{ color: '#2563eb' }}>Rapport Checkov →</a>
+                )}
+              </div>
+            )}
           </>
         )}
       </Section>
