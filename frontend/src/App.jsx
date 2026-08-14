@@ -393,6 +393,13 @@ export default function App() {
           <>
             <StatCard label="Événements critiques (1h)" value={falco.data.critical_events_1h} warn={5} decimals={0} />
             <StatCard label="Événements critiques (24h)" value={falco.data.critical_events_24h} warn={20} decimals={0} />
+            {falco.data.grafana_url && (
+              <div style={{ gridColumn: '1 / -1', textAlign: 'right' }}>
+                <a href={falco.data.grafana_url} target="_blank" rel="noreferrer" style={{ fontSize: 12, color: '#2563eb' }}>
+                  Voir les logs complets dans Grafana →
+                </a>
+              </div>
+            )}
           </>
         )}
       </Section>
@@ -416,16 +423,16 @@ export default function App() {
             <StatCard label="Trivy — CVE élevées" value={scans.data.trivy?.high} warn={0} decimals={0} />
             <StatCard label="Gitleaks — Secrets détectés" value={scans.data.gitleaks?.secrets_found} warn={0} decimals={0} />
             <StatCard label="Checkov — Contrôles échoués" value={scans.data.checkov?.failed} warn={0} decimals={0} />
-            {(scans.data.trivy?.report_url || scans.data.gitleaks?.report_url || scans.data.checkov?.report_url) && (
+            {(scans.data.artifact_urls?.trivy || scans.data.artifact_urls?.gitleaks || scans.data.artifact_urls?.checkov) && (
               <div style={{ gridColumn: '1 / -1', display: 'flex', gap: 16, justifyContent: 'flex-end', fontSize: 12 }}>
-                {scans.data.trivy?.report_url && (
-                  <a href={scans.data.trivy.report_url} target="_blank" rel="noreferrer" style={{ color: '#2563eb' }}>Rapport Trivy →</a>
+                {scans.data.artifact_urls?.trivy && (
+                  <a href={scans.data.artifact_urls.trivy} target="_blank" rel="noreferrer" style={{ color: '#2563eb' }}>Rapport Trivy →</a>
                 )}
-                {scans.data.gitleaks?.report_url && (
-                  <a href={scans.data.gitleaks.report_url} target="_blank" rel="noreferrer" style={{ color: '#2563eb' }}>Rapport Gitleaks →</a>
+                {scans.data.artifact_urls?.gitleaks && (
+                  <a href={scans.data.artifact_urls.gitleaks} target="_blank" rel="noreferrer" style={{ color: '#2563eb' }}>Rapport Gitleaks →</a>
                 )}
-                {scans.data.checkov?.report_url && (
-                  <a href={scans.data.checkov.report_url} target="_blank" rel="noreferrer" style={{ color: '#2563eb' }}>Rapport Checkov →</a>
+                {scans.data.artifact_urls?.checkov && (
+                  <a href={scans.data.artifact_urls.checkov} target="_blank" rel="noreferrer" style={{ color: '#2563eb' }}>Rapport Checkov →</a>
                 )}
               </div>
             )}
