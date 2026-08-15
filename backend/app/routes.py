@@ -536,3 +536,96 @@ def audits():
         pass
 
     return jsonify(result)
+# ----------------------------------------------------------------------
+# Alertes Grafana actives (via l'API Alertmanager interne)
+# ----------------------------------------------------------------------
+@main.route('/api/alerts')
+def alerts():
+    import os
+    from datetime import datetime, timezone
+
+    grafana_url = os.environ.get('GRAFANA_URL', '').rstrip('/')
+    grafana_token = os.environ.get('GRAFANA_TOKEN', '')
+    public_url = os.environ.get('GRAFANA_PUBLIC_URL', '').rstrip('/')
+
+    if not grafana_url or not grafana_token:
+        return jsonify({'available': False, 'reason': 'configuration Grafana absente'})
+
+    try:
+        resp = requests.get(
+            f'{grafana_url}/api/alertmanager/grafana/api/v2/alerts',
+            headers={'Authorization': f'Bearer {grafana_token}'},
+            timeout=5,
+        )
+        resp.raise_for_status()
+        raw = resp.json()
+    except Exception:
+        return jsonify({'available': False, 'reason': 'Grafana injoignable'})
+
+    now = datetime.now(timezone.utc)
+    alerts_list = []
+    by_severity = {}
+    by_category = {}
+    silenced_count = 0
+
+    for a in raw:
+        labels = a.get('labels', {}) or {}
+        annotations = a.get('annotations', {}) or {}
+        status = a.get('status', {}) or {}
+
+        is_silenced = bool(status.get('silencedBy'))
+        if is_silenced:
+            silenced_count += 1
+
+        severity = (labels.get('severity') or 'unknown').lower()
+        category = labels.get('category') or 'autre'
+        alertname = labels.get('alertname') or ''
+        # rulename est plus lisible que alertname quand il est present
+        name = labels.get('rulename') or alertname or 'Alerte sans nom'
+
+        # duree depuis le declenchement
+        duration_min = None
+        starts_at = a.get('startsAt')
+        if starts_at:
+            try:
+                started = datetime.fromisoformat(starts_at.replace('Z', '+00:00'))
+                duration_min = int((now - started).total_seconds() / 60)
+            except Exception:
+                pass
+
+        # une alerte DatasourceNoData signale une absence de donnees, pas un incident metier
+        is_no_data = alertname == 'DatasourceNoData'
+
+        by_severity[severity] = by_severity.get(severity, 0) + 1
+        by_category[category] = by_category.get(category, 0) + 1
+
+        alerts_list.append({
+            'name': name,
+            'alertname': alertname,
+            'severity': severity,
+            'category': category,
+            'folder': labels.get('grafana_folder'),
+            'summary': annotations.get('summary'),
+            'started_at': starts_at,
+            'duration_minutes': duration_min,
+            'silenced': is_silenced,
+            'no_data': is_no_data,
+            'url': a.get('generatorURL'),
+        })
+
+    # tri : critiques d'abord, puis les plus anciennes
+    severity_order = {'critical': 0, 'warning': 1, 'info': 2, 'unknown': 3}
+    alerts_list.sort(key=lambda x: (
+        severity_order.get(x['severity'], 9),
+        -(x['duration_minutes'] or 0),
+    ))
+
+    return jsonify({
+        'available': True,
+        'total': len(alerts_list),
+        'silenced': silenced_count,
+        'by_severity': by_severity,
+        'by_category': by_category,
+        'alerts': alerts_list,
+        'grafana_alerting_url': f'{public_url}/alerting/list' if public_url else None,
+    })

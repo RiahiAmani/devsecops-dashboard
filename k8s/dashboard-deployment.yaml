@@ -43,7 +43,7 @@ spec:
             - name: JENKINS_PUBLIC_URL
               value: "https://jenkins.riahi.dpdns.org"
             - name: SONARCLOUD_PROJECT_KEY
-              value: "RiahiAmani_devsecops-platform"
+              value: "RiahiAmani_flask-postgres-docker-compose"
             - name: SONARCLOUD_TOKEN
               valueFrom:
                 secretKeyRef:
@@ -65,6 +65,15 @@ spec:
                   key: token
             - name: CLOUDFLARED_METRICS_URL
               value: "http://cloudflared-metrics.cloudflared.svc.cluster.local:20241"
+            - name: GRAFANA_URL
+              value: "http://kube-prometheus-stack-grafana.monitoring.svc.cluster.local"
+            - name: GRAFANA_PUBLIC_URL
+              value: "https://grafana.riahi.dpdns.org"
+            - name: GRAFANA_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: grafana-api-token
+                  key: token
             
           resources:
             requests:
