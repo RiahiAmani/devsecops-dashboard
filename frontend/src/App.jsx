@@ -416,6 +416,144 @@ function AuditsCard({ data }) {
   )
 }
 
+function AlertsCard({ data }) {
+  if (!data) {
+    return (
+      <div style={{ padding: '1rem', borderRadius: 8, border: '1px solid #e5e5e5', gridColumn: '1 / -1', color: '#888' }}>
+        Alertes indisponibles
+      </div>
+    )
+  }
+  if (!data.available) {
+    return (
+      <div style={{ padding: '1rem', borderRadius: 8, border: '1px solid #e5e5e5', gridColumn: '1 / -1', color: '#888' }}>
+        {data.reason || 'Alertes indisponibles'}
+      </div>
+    )
+  }
+  if (data.total === 0) {
+    return (
+      <div style={{ padding: '1rem', borderRadius: 8, border: '1px solid #bbf7d0', background: '#f0fdf4', gridColumn: '1 / -1', color: '#16a34a' }}>
+        Aucune alerte active
+      </div>
+    )
+  }
+
+  const grouped = []
+  data.alerts.forEach((a) => {
+    const existing = grouped.find(g => g.name === a.name && g.severity === a.severity)
+    if (existing) {
+      existing.count += 1
+      if ((a.duration_minutes || 0) > (existing.duration_minutes || 0)) {
+        existing.duration_minutes = a.duration_minutes
+      }
+    } else {
+      grouped.push({ ...a, count: 1 })
+    }
+  })
+
+  const fmtDuration = (min) => {
+    if (min === null || min === undefined) return '—'
+    if (min < 60) return `${min} min`
+    const h = Math.floor(min / 60)
+    if (h < 24) return `${h}h`
+    return `${Math.floor(h / 24)}j`
+  }
+
+  const sevColor = (sev) => {
+    if (sev === 'critical') return { bg: '#fee2e2', border: '#fecaca', dot: '#dc2626' }
+    if (sev === 'warning') return { bg: '#fef9c3', border: '#fde68a', dot: '#ca8a04' }
+    return { bg: '#f9fafb', border: '#e5e5e5', dot: '#6b7280' }
+  }
+
+  return (
+    <div style={{ gridColumn: '1 / -1' }}>
+      <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
+        {Object.entries(data.by_severity).map(([sev, n]) => (
+          <span key={sev} style={{
+            padding: '3px 10px', borderRadius: 999, fontSize: 12, fontWeight: 600,
+            background: sevColor(sev).bg, color: sevColor(sev).dot,
+            border: `1px solid ${sevColor(sev).border}`
+          }}>
+            {n} {sev}
+          </span>
+        ))}
+        {Object.entries(data.by_category).map(([cat, n]) => (
+          <span key={cat} style={{ fontSize: 11, color: '#666' }}>
+            {cat} : {n}
+          </span>
+        ))}
+        {data.silenced > 0 && (
+          <span style={{ fontSize: 11, color: '#999' }}>({data.silenced} silencée{data.silenced > 1 ? 's' : ''})</span>
+        )}
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {grouped.map((a, i) => {
+          const c = sevColor(a.severity)
+          return (
+            <div key={i} style={{
+              padding: '0.7rem 0.9rem', borderRadius: 8, background: '#fff',
+              border: `1px solid ${c.border}`, borderLeft: `4px solid ${c.dot}`,
+              display: 'flex', alignItems: 'center', gap: 12, opacity: a.silenced ? 0.55 : 1
+            }}>
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <div style={{ fontSize: 13, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 8 }}>
+                  {a.name}
+                  {a.count > 1 && (
+                    <span style={{ fontSize: 10, padding: '1px 7px', borderRadius: 999, background: '#f3f4f6', color: '#6b7280' }}>
+                      ×{a.count}
+                    </span>
+                  )}
+                  {a.no_data && (
+                    <span style={{ fontSize: 10, padding: '1px 7px', borderRadius: 999, background: '#e0e7ff', color: '#4338ca' }}>
+                      SANS DONNÉES
+                    </span>
+                  )}
+                  {a.silenced && (
+                    <span style={{ fontSize: 10, padding: '1px 7px', borderRadius: 999, background: '#f3f4f6', color: '#6b7280' }}>
+                      SILENCÉE
+                    </span>
+                  )}
+                </div>
+                {a.summary && (
+                  <div
+                    title={a.summary}
+                    style={{
+                      fontSize: 11, color: '#666', marginTop: 3,
+                      whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'
+                    }}
+                  >
+                    {a.summary.replace(/^Summary:\s*/, '').split('\n')[0]}
+                  </div>
+                )}
+              </div>
+              <div style={{ fontSize: 11, color: '#999', flexShrink: 0, textAlign: 'right' }}>
+                <div>{a.category}</div>
+                <div>depuis {fmtDuration(a.duration_minutes)}</div>
+              </div>
+              {a.url && (
+                <a href={a.url} target="_blank" rel="noreferrer"
+                   style={{ fontSize: 11, color: '#2563eb', flexShrink: 0, textDecoration: 'none' }}>
+                  Grafana →
+                </a>
+              )}
+            </div>
+          )
+        })}
+      </div>
+
+      {data.grafana_alerting_url && (
+        <div style={{ textAlign: 'right', marginTop: 10 }}>
+          <a href={data.grafana_alerting_url} target="_blank" rel="noreferrer" style={{ fontSize: 12, color: '#2563eb' }}>
+            Gérer toutes les alertes dans Grafana →
+          </a>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function useEndpoint(path) {
   const [data, setData] = useState(null)
   const [error, setError] = useState(null)
@@ -450,6 +588,7 @@ export default function App() {
   const scans = useEndpoint('/security/scans')
   const tunnel = useEndpoint('/tunnel')
   const pods = useEndpoint('/pods')
+  const alerts = useEndpoint('/alerts')
   const audits = useEndpoint('/audits')
 
   return (
@@ -467,6 +606,11 @@ export default function App() {
             <StatCard label="DB up" value={overview.data.db_up} warn={0} invert />
           </>
         )}
+      </Section>
+
+      <Section title="Alertes actives" subtitle="Règles Grafana actuellement déclenchées">
+        {alerts.error && <p style={{ color: 'red' }}>{alerts.error}</p>}
+        <AlertsCard data={alerts.data} />
       </Section>
 
       <Section title="Infrastructure">
