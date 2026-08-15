@@ -277,6 +277,145 @@ function PodsHealthCard({ data }) {
   )
 }
 
+function auditDate(iso) {
+  if (!iso) return '—'
+  const d = new Date(iso)
+  return d.toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' })
+}
+
+function AuditsCard({ data }) {
+  if (!data) {
+    return (
+      <div style={{ padding: '1rem', borderRadius: 8, border: '1px solid #e5e5e5', gridColumn: '1 / -1', color: '#888' }}>
+        Rapports d'audit indisponibles
+      </div>
+    )
+  }
+
+  const bench = data.kube_bench
+  const hunter = data.kube_hunter
+
+  return (
+    <div style={{ gridColumn: '1 / -1', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '1rem' }}>
+
+      <div style={{ padding: '1.25rem', borderRadius: 8, background: '#fff', border: '1px solid #e5e5e5' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 12 }}>
+          <div>
+            <div style={{ fontSize: 15, fontWeight: 700 }}>kube-bench</div>
+            <div style={{ fontSize: 11, color: '#999' }}>Conformité CIS Kubernetes Benchmark</div>
+          </div>
+          {bench?.available && (
+            <span style={{ fontSize: 11, color: '#999' }}>audit du {auditDate(bench.scanned_at)}</span>
+          )}
+        </div>
+
+        {!bench?.available && <div style={{ color: '#888', fontSize: 13 }}>Aucun rapport disponible</div>}
+
+        {bench?.available && (
+          <>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 14 }}>
+              <span style={{
+                fontSize: 34, fontWeight: 700,
+                color: bench.score_percent >= 80 ? '#16a34a' : bench.score_percent >= 60 ? '#ca8a04' : '#dc2626'
+              }}>
+                {bench.score_percent}%
+              </span>
+              <span style={{ fontSize: 12, color: '#666' }}>de conformité (contrôles automatisés)</span>
+            </div>
+
+            <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
+              <div style={{ flex: 1, padding: '0.5rem', borderRadius: 6, background: '#f0fdf4', border: '1px solid #bbf7d0', textAlign: 'center' }}>
+                <div style={{ fontSize: 18, fontWeight: 700, color: '#16a34a' }}>{bench.passed}</div>
+                <div style={{ fontSize: 10, color: '#666' }}>CONFORMES</div>
+              </div>
+              <div style={{ flex: 1, padding: '0.5rem', borderRadius: 6, background: '#fee2e2', border: '1px solid #fecaca', textAlign: 'center' }}>
+                <div style={{ fontSize: 18, fontWeight: 700, color: '#dc2626' }}>{bench.failed}</div>
+                <div style={{ fontSize: 10, color: '#666' }}>ÉCHECS</div>
+              </div>
+              <div style={{ flex: 1, padding: '0.5rem', borderRadius: 6, background: '#fef9c3', border: '1px solid #fde68a', textAlign: 'center' }}>
+                <div style={{ fontSize: 18, fontWeight: 700, color: '#ca8a04' }}>{bench.warned}</div>
+                <div style={{ fontSize: 10, color: '#666' }}>MANUELS</div>
+              </div>
+            </div>
+
+            <div style={{ fontSize: 11, color: '#666', marginBottom: 6, fontWeight: 600 }}>Détail par section</div>
+            {bench.sections?.map((s) => (
+              <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '3px 0', fontSize: 11 }}>
+                <span style={{ color: '#999', minWidth: 14 }}>{s.id}</span>
+                <span style={{ flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{s.text}</span>
+                <span style={{ color: '#16a34a', fontWeight: 600 }}>{s.passed}</span>
+                <span style={{ color: '#ccc' }}>/</span>
+                <span style={{ color: s.failed > 0 ? '#dc2626' : '#ccc', fontWeight: 600 }}>{s.failed}</span>
+                <span style={{ color: '#ccc' }}>/</span>
+                <span style={{ color: '#ca8a04', fontWeight: 600 }}>{s.warned}</span>
+              </div>
+            ))}
+          </>
+        )}
+      </div>
+
+      <div style={{ padding: '1.25rem', borderRadius: 8, background: '#fff', border: '1px solid #e5e5e5' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 12 }}>
+          <div>
+            <div style={{ fontSize: 15, fontWeight: 700 }}>kube-hunter</div>
+            <div style={{ fontSize: 11, color: '#999' }}>Test d'intrusion externe du cluster</div>
+          </div>
+          {hunter?.available && (
+            <span style={{ fontSize: 11, color: '#999' }}>audit du {auditDate(hunter.scanned_at)}</span>
+          )}
+        </div>
+
+        {!hunter?.available && <div style={{ color: '#888', fontSize: 13 }}>Aucun rapport disponible</div>}
+
+        {hunter?.available && (
+          <>
+            <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
+              <div style={{ flex: 1, padding: '0.5rem', borderRadius: 6, background: '#f9fafb', border: '1px solid #e5e5e5', textAlign: 'center' }}>
+                <div style={{ fontSize: 18, fontWeight: 700 }}>{hunter.nodes_count}</div>
+                <div style={{ fontSize: 10, color: '#666' }}>NŒUDS</div>
+              </div>
+              <div style={{ flex: 1, padding: '0.5rem', borderRadius: 6, background: '#f9fafb', border: '1px solid #e5e5e5', textAlign: 'center' }}>
+                <div style={{ fontSize: 18, fontWeight: 700 }}>{hunter.services_count}</div>
+                <div style={{ fontSize: 10, color: '#666' }}>SERVICES</div>
+              </div>
+              <div style={{
+                flex: 1, padding: '0.5rem', borderRadius: 6, textAlign: 'center',
+                background: hunter.vulnerabilities_count > 0 ? '#fee2e2' : '#f0fdf4',
+                border: `1px solid ${hunter.vulnerabilities_count > 0 ? '#fecaca' : '#bbf7d0'}`
+              }}>
+                <div style={{ fontSize: 18, fontWeight: 700, color: hunter.vulnerabilities_count > 0 ? '#dc2626' : '#16a34a' }}>
+                  {hunter.vulnerabilities_count}
+                </div>
+                <div style={{ fontSize: 10, color: '#666' }}>VULNÉRABILITÉS</div>
+              </div>
+            </div>
+
+            {hunter.vulnerabilities?.length > 0 && (
+              <>
+                <div style={{ fontSize: 11, color: '#666', marginBottom: 6, fontWeight: 600 }}>Détections</div>
+                {hunter.vulnerabilities.map((v, i) => (
+                  <div key={i} style={{ padding: '0.5rem', borderRadius: 6, background: '#fafafa', border: '1px solid #eee', marginBottom: 6 }}>
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                      <PriorityBadge priority={v.severity ? v.severity.charAt(0).toUpperCase() + v.severity.slice(1) : '?'} />
+                      <span style={{ fontSize: 12, fontWeight: 600 }}>{v.vid} — {v.name}</span>
+                    </div>
+                    <div style={{ fontSize: 11, color: '#666', marginTop: 4 }}>{v.description}</div>
+                    {v.reference && (
+                      <a href={v.reference} target="_blank" rel="noreferrer" style={{ fontSize: 11, color: '#2563eb' }}>
+                        Documentation →
+                      </a>
+                    )}
+                  </div>
+                ))}
+              </>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
 function useEndpoint(path) {
   const [data, setData] = useState(null)
   const [error, setError] = useState(null)
@@ -311,6 +450,7 @@ export default function App() {
   const scans = useEndpoint('/security/scans')
   const tunnel = useEndpoint('/tunnel')
   const pods = useEndpoint('/pods')
+  const audits = useEndpoint('/audits')
 
   return (
     <div style={{ fontFamily: 'sans-serif', padding: '2rem', maxWidth: 1100, margin: '0 auto' }}>
@@ -438,6 +578,11 @@ export default function App() {
             )}
           </>
         )}
+      </Section>
+
+      <Section title="Audits de sécurité du cluster" subtitle="Analyses ponctuelles de conformité et de vulnérabilités">
+        {audits.error && <p style={{ color: 'red' }}>{audits.error}</p>}
+        <AuditsCard data={audits.data} />
       </Section>
 
       <Section title="Tunnel Cloudflare">
