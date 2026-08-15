@@ -453,3 +453,86 @@ def tunnel_status():
         'active_connections': ha_connections,
         'config_push_errors': config_errors,
     })
+# ----------------------------------------------------------------------
+# Audits de securite ponctuels (kube-bench CIS / kube-hunter)
+# ----------------------------------------------------------------------
+@main.route('/api/audits')
+def audits():
+    import os
+    from datetime import datetime, timezone
+
+    base_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'audit-reports')
+    result = {'kube_bench': {'available': False}, 'kube_hunter': {'available': False}}
+
+    # --- kube-bench ---
+    bench_path = os.path.join(base_dir, 'kube-bench-report.json')
+    try:
+        with open(bench_path, encoding='utf-8') as f:
+            bench = json.load(f)
+        totals = bench.get('Totals', {})
+        sections = []
+        for c in bench.get('Controls', []):
+            sections.append({
+                'id': c.get('id'),
+                'text': c.get('text'),
+                'passed': c.get('total_pass', 0),
+                'failed': c.get('total_fail', 0),
+                'warned': c.get('total_warn', 0),
+            })
+        total_evaluated = (
+            totals.get('total_pass', 0)
+            + totals.get('total_fail', 0)
+            + totals.get('total_warn', 0)
+        )
+        automated = totals.get('total_pass', 0) + totals.get('total_fail', 0)
+        score = round(totals.get('total_pass', 0) / automated * 100, 1) if automated else None
+        result['kube_bench'] = {
+            'available': True,
+            'passed': totals.get('total_pass', 0),
+            'failed': totals.get('total_fail', 0),
+            'warned': totals.get('total_warn', 0),
+            'total': total_evaluated,
+            'score_percent': score,
+            'sections': sections,
+            'scanned_at': datetime.fromtimestamp(
+                os.path.getmtime(bench_path), tz=timezone.utc
+            ).isoformat(),
+        }
+    except Exception:
+        pass
+
+    # --- kube-hunter ---
+    hunter_path = os.path.join(base_dir, 'kube-hunter-report.json')
+    try:
+        with open(hunter_path, encoding='utf-8') as f:
+            hunter = json.load(f)
+        vulns = hunter.get('vulnerabilities', []) or []
+        by_severity = {}
+        for v in vulns:
+            sev = (v.get('severity') or 'unknown').lower()
+            by_severity[sev] = by_severity.get(sev, 0) + 1
+        result['kube_hunter'] = {
+            'available': True,
+            'nodes_count': len(hunter.get('nodes', []) or []),
+            'services_count': len(hunter.get('services', []) or []),
+            'vulnerabilities_count': len(vulns),
+            'by_severity': by_severity,
+            'vulnerabilities': [
+                {
+                    'vid': v.get('vid'),
+                    'name': v.get('vulnerability'),
+                    'severity': (v.get('severity') or 'unknown').lower(),
+                    'location': v.get('location'),
+                    'description': v.get('description'),
+                    'reference': v.get('avd_reference'),
+                }
+                for v in vulns
+            ],
+            'scanned_at': datetime.fromtimestamp(
+                os.path.getmtime(hunter_path), tz=timezone.utc
+            ).isoformat(),
+        }
+    except Exception:
+        pass
+
+    return jsonify(result)
