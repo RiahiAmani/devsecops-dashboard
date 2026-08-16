@@ -430,7 +430,120 @@ def security_scans():
 
     return jsonify(result)
 
+# ----------------------------------------------------------------------
+# Detail des vulnerabilites (Trivy / Gitleaks / Checkov)
+# ----------------------------------------------------------------------
+SEVERITY_RANK = {'CRITICAL': 0, 'HIGH': 1, 'MEDIUM': 2, 'LOW': 3, 'UNKNOWN': 4}
 
+
+@main.route('/api/security/scans/details')
+def security_scans_details():
+    job = current_app.config['JENKINS_JOB']
+    last_build = jenkins_get(
+        f'/job/{job}/lastSuccessfulBuild/api/json',
+        tree='number,timestamp,artifacts[fileName,relativePath]'
+    )
+    if last_build is None:
+        return jsonify({'available': False})
+
+    build_number = last_build.get('number')
+    artifacts = {a['fileName']: a['relativePath'] for a in last_build.get('artifacts', [])}
+
+    result = {
+        'available': True,
+        'build_number': build_number,
+        'timestamp_ms': last_build.get('timestamp'),
+        'trivy': {'items': [], 'truncated': False, 'total': 0},
+        'gitleaks': {'items': [], 'truncated': False, 'total': 0},
+        'checkov': {'items': [], 'truncated': False, 'total': 0},
+    }
+
+    MAX_ITEMS = 40
+
+    # --- Trivy : CVE HIGH et CRITICAL uniquement ---
+    if 'trivy-report.json' in artifacts:
+        text = jenkins_get_artifact_text(job, build_number, artifacts['trivy-report.json'])
+        if text:
+            try:
+                data = json.loads(text)
+                items = []
+                for res in data.get('Results', []) or []:
+                    target = res.get('Target', '')
+                    for v in res.get('Vulnerabilities', []) or []:
+                        sev = (v.get('Severity') or 'UNKNOWN').upper()
+                        if sev not in ('CRITICAL', 'HIGH'):
+                            continue
+                        items.append({
+                            'id': v.get('VulnerabilityID'),
+                            'severity': sev,
+                            'package': v.get('PkgName'),
+                            'installed': v.get('InstalledVersion'),
+                            'fixed': v.get('FixedVersion') or None,
+                            'title': (v.get('Title') or '').strip() or None,
+                            'target': target,
+                            'source': v.get('PkgPath') or 'système',
+                            'url': v.get('PrimaryURL'),
+                        })
+                items.sort(key=lambda x: (
+                    SEVERITY_RANK.get(x['severity'], 9),
+                    x['package'] or '',
+                ))
+                result['trivy']['total'] = len(items)
+                result['trivy']['truncated'] = len(items) > MAX_ITEMS
+                result['trivy']['items'] = items[:MAX_ITEMS]
+            except Exception:
+                pass
+
+    # --- Gitleaks : secrets detectes (valeur du secret jamais exposee) ---
+    if 'gitleaks-report.json' in artifacts:
+        text = jenkins_get_artifact_text(job, build_number, artifacts['gitleaks-report.json'])
+        if text:
+            try:
+                data = json.loads(text)
+                items = []
+                if isinstance(data, list):
+                    for f in data:
+                        items.append({
+                            'rule': f.get('RuleID'),
+                            'file': f.get('File'),
+                            'line': f.get('StartLine'),
+                            'commit': (f.get('Commit') or '')[:8] or None,
+                            'author': f.get('Author'),
+                            'description': f.get('Description'),
+                        })
+                result['gitleaks']['total'] = len(items)
+                result['gitleaks']['truncated'] = len(items) > MAX_ITEMS
+                result['gitleaks']['items'] = items[:MAX_ITEMS]
+            except Exception:
+                pass
+
+    # --- Checkov : controles echoues ---
+    if 'results_json.json' in artifacts:
+        text = jenkins_get_artifact_text(job, build_number, artifacts['results_json.json'])
+        if text:
+            try:
+                data = json.loads(text)
+                blocks = data if isinstance(data, list) else [data]
+                items = []
+                for block in blocks:
+                    checks = (block.get('results', {}) or {}).get('failed_checks', []) or []
+                    for c in checks:
+                        rng = c.get('file_line_range') or []
+                        items.append({
+                            'id': c.get('check_id'),
+                            'name': c.get('check_name'),
+                            'file': c.get('file_path'),
+                            'line': rng[0] if rng else None,
+                            'resource': c.get('resource'),
+                            'url': c.get('guideline'),
+                        })
+                result['checkov']['total'] = len(items)
+                result['checkov']['truncated'] = len(items) > MAX_ITEMS
+                result['checkov']['items'] = items[:MAX_ITEMS]
+            except Exception:
+                pass
+
+    return jsonify(result)
 # ----------------------------------------------------------------------
 # Tunnel Cloudflare
 # ----------------------------------------------------------------------
