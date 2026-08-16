@@ -742,3 +742,27 @@ def alerts():
         'alerts': alerts_list,
         'grafana_alerting_url': f'{public_url}/alerting/list' if public_url else None,
     })
+# ----------------------------------------------------------------------
+# Sauvegardes etcd (metriques publiees par backup-etcd.sh via node-exporter)
+# ----------------------------------------------------------------------
+@main.route('/api/etcd-backup')
+def etcd_backup():
+    last_ts = query_prometheus('etcd_backup_last_success_timestamp_seconds')
+    size = query_prometheus('etcd_backup_size_bytes')
+    count = query_prometheus('etcd_backup_count')
+
+    if last_ts is None:
+        return jsonify({'available': False, 'reason': 'aucune metrique de sauvegarde trouvee'})
+
+    age_hours = query_prometheus(
+        '(time() - etcd_backup_last_success_timestamp_seconds) / 3600'
+    )
+
+    return jsonify({
+        'available': True,
+        'last_success_ms': int(last_ts * 1000),
+        'age_hours': round(age_hours, 1) if age_hours is not None else None,
+        'size_bytes': int(size) if size is not None else None,
+        'count': int(count) if count is not None else None,
+        'threshold_hours': 26,
+    })
