@@ -564,6 +564,36 @@ function AuditsPanel({ T, data }) {
   )
 }
 
+function EtcdBackupPanel({ T, data }) {
+  if (!data) return <Empty T={T}>Chargement du statut des sauvegardes…</Empty>
+  if (!data.available) return <Empty T={T}>{data.reason || 'Statut des sauvegardes indisponible'}</Empty>
+
+  const stale = data.age_hours !== null && data.age_hours > data.threshold_hours
+  const sizeMo = data.size_bytes ? (data.size_bytes / 1024 / 1024).toFixed(1) : null
+
+  return (
+    <>
+      <StateMetric
+        T={T}
+        label="Dernière sauvegarde"
+        ok={!stale}
+        hint={stale ? `au-delà du seuil de ${data.threshold_hours} h` : `seuil : ${data.threshold_hours} h`}
+      />
+      <Metric
+        T={T}
+        label="Ancienneté"
+        value={data.age_hours}
+        unit=" h"
+        threshold={data.threshold_hours}
+        decimals={1}
+        hint={timeAgo(data.last_success_ms)}
+      />
+      <Metric T={T} label="Taille du snapshot" value={sizeMo} unit=" Mo" decimals={1} />
+      <Metric T={T} label="Snapshots conservés" value={data.count} decimals={0} hint="rétention : 7 jours" />
+    </>
+  )
+}
+
 function useEndpoint(path) {
   const [data, setData] = useState(null)
   const [error, setError] = useState(null)
@@ -634,6 +664,7 @@ export default function App() {
   const scanDetails = useEndpoint('/security/scans/details')
   const tunnel = useEndpoint('/tunnel')
   const pods = useEndpoint('/pods')
+  const etcdBackup = useEndpoint('/etcd-backup')
   const audits = useEndpoint('/audits')
 
   const [, setTick] = useState(0)
@@ -718,6 +749,11 @@ export default function App() {
               <Metric T={T} label="Redémarrages backend" value={pods.data.backend_restarts} threshold={5} decimals={0} />
             </>
           )}
+        </Section>
+
+        <Section T={T} eyebrow="Infrastructure" title="Sauvegardes etcd" subtitle="Snapshots quotidiens de la base d'état du cluster">
+          <ErrorLine T={T} error={etcdBackup.error} />
+          <EtcdBackupPanel T={T} data={etcdBackup.data} />
         </Section>
 
         <Section T={T} eyebrow="Application" title="Task Manager" subtitle="Trafic et disponibilité applicative" link={GRAFANA.app}>
